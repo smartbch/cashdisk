@@ -32,6 +32,8 @@ const (
 	PointsPerFileInfo = int64(30)
 	PointsOfMkdir     = int64(200)
 	PointsOfRename    = int64(150)
+
+	ConsumeLogDuration = 30 * 24 * time.Hour
 )
 
 var (
@@ -71,7 +73,8 @@ func consumePoints(db *badger.DB, uid, points int64, operation string) error {
 	key = append(key, int64ToBytes(UniqTS.GetTimestamp())...)
 	value := append(int64ToBytes(uid), operation...)
 	return db.Update(func(txn *badger.Txn) error {
-		return txn.Set(key, value)
+		e := badger.NewEntry(key, value).WithTTL(ConsumeLogDuration)
+		return txn.SetEntry(e)
 	})
 }
 
