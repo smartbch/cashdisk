@@ -65,7 +65,7 @@ func consumePoints(db *badger.DB, uid, points int64, operation string) error {
 }
 
 type WatchedDir struct {
-	dir webdav.Dir
+	webdav.Dir
 	db  *badger.DB
 	uid int64
 }
@@ -78,17 +78,13 @@ func (wd *WatchedDir) Mkdir(ctx context.Context, name string, perm os.FileMode) 
 	if err != nil {
 		return err
 	}
-	return wd.dir.Mkdir(ctx, name, perm)
+	return wd.Dir.Mkdir(ctx, name, perm)
 }
 
 func (wd *WatchedDir) OpenFile(ctx context.Context, name string, flag int,
 	perm os.FileMode) (webdav.File, error) {
-	f, err := wd.dir.OpenFile(ctx, name, flag, perm)
-	return &WatchedFile{file: f, db: wd.db, name: name, uid: wd.uid}, err
-}
-
-func (wd *WatchedDir) RemoveAll(ctx context.Context, name string) error {
-	return wd.dir.RemoveAll(ctx, name)
+	f, err := wd.Dir.OpenFile(ctx, name, flag, perm)
+	return &WatchedFile{File: f, db: wd.db, name: name, uid: wd.uid}, err
 }
 
 func (wd *WatchedDir) Rename(ctx context.Context, oldName, newName string) error {
@@ -97,7 +93,7 @@ func (wd *WatchedDir) Rename(ctx context.Context, oldName, newName string) error
 	if err != nil {
 		return err
 	}
-	return wd.dir.Rename(ctx, oldName, newName)
+	return wd.Dir.Rename(ctx, oldName, newName)
 }
 
 func (wd *WatchedDir) Stat(ctx context.Context, name string) (fi os.FileInfo, err error) {
@@ -106,13 +102,13 @@ func (wd *WatchedDir) Stat(ctx context.Context, name string) (fi os.FileInfo, er
 	if err != nil {
 		return
 	}
-	return wd.dir.Stat(ctx, name)
+	return wd.Dir.Stat(ctx, name)
 }
 
 var _ webdav.File = (*WatchedFile)(nil)
 
 type WatchedFile struct {
-	file webdav.File
+	webdav.File
 	db   *badger.DB
 	uid  int64
 	name string
@@ -124,11 +120,11 @@ func (wf *WatchedFile) Write(p []byte) (n int, err error) {
 	if err != nil {
 		return 0, err
 	}
-	return wf.file.Write(p)
+	return wf.File.Write(p)
 }
 
 func (wf *WatchedFile) Readdir(count int) ([]fs.FileInfo, error) {
-	res, err := wf.file.Readdir(count)
+	res, err := wf.File.Readdir(count)
 	if err == nil {
 		operation := fmt.Sprintf("Read dir '%s' for %d entries", wf.name, len(res))
 		err = consumePoints(wf.db, wf.uid, int64(len(res))*PointsPerFileInfo, operation)
@@ -137,7 +133,7 @@ func (wf *WatchedFile) Readdir(count int) ([]fs.FileInfo, error) {
 }
 
 func (wf *WatchedFile) Stat() (fs.FileInfo, error) {
-	res, err := wf.file.Stat()
+	res, err := wf.File.Stat()
 	if err == nil {
 		operation := fmt.Sprintf("Stat '%s'", wf.name)
 		err = consumePoints(wf.db, wf.uid, PointsPerFileInfo, operation)
@@ -145,20 +141,12 @@ func (wf *WatchedFile) Stat() (fs.FileInfo, error) {
 	return res, err
 }
 
-func (wf *WatchedFile) Close() error {
-	return wf.file.Close()
-}
-
 func (wf *WatchedFile) Read(p []byte) (n int, err error) {
-	n, err = wf.file.Read(p)
+	n, err = wf.File.Read(p)
 	if err == nil {
 		operation := fmt.Sprintf("Read '%s' for %d bytes", wf.name, n)
 		err = consumePoints(wf.db, wf.uid, int64((n+1023)/1024), operation)
 	} 
 	return n, err
-}
-
-func (wf *WatchedFile) Seek(offset int64, whence int) (int64, error) {
-	return wf.file.Seek(offset, whence)
 }
 
