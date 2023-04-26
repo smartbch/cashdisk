@@ -21,4 +21,6 @@
 go.work
 *.swp
 *.DS_Store
-cmd/webdav/webdav
+cmd/webdavdemo/webdav
+
+.idea

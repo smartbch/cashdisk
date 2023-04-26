@@ -11,10 +11,9 @@ import (
 	"golang.org/x/net/webdav"
 )
 
-
 type Auth struct {
-        username string
-        password string
+	username string
+	password string
 }
 
 func (auth *Auth) basicAuth(next http.HandlerFunc) http.HandlerFunc {
@@ -26,8 +25,8 @@ func (auth *Auth) basicAuth(next http.HandlerFunc) http.HandlerFunc {
 			expectedUsernameHash := sha256.Sum256([]byte(auth.username))
 			expectedPasswordHash := sha256.Sum256([]byte(auth.password))
 
-			usernameMatch := (subtle.ConstantTimeCompare(usernameHash[:], expectedUsernameHash[:]) == 1)
-			passwordMatch := (subtle.ConstantTimeCompare(passwordHash[:], expectedPasswordHash[:]) == 1)
+			usernameMatch := subtle.ConstantTimeCompare(usernameHash[:], expectedUsernameHash[:]) == 1
+			passwordMatch := subtle.ConstantTimeCompare(passwordHash[:], expectedPasswordHash[:]) == 1
 
 			if usernameMatch && passwordMatch {
 				next.ServeHTTP(w, r)
@@ -57,7 +56,7 @@ func main() {
 
 	flag.Parse()
 	var fs webdav.Dir = "."
-	h := &webdav.Handler {
+	h := &webdav.Handler{
 		FileSystem: fs,
 		LockSystem: webdav.NewMemLS(),
 	}

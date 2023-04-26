@@ -2,15 +2,17 @@ module github.com/smartbch/cashdisk
 
 go 1.20
 
-require golang.org/x/net v0.9.0
+require (
+	github.com/dgraph-io/badger/v3 v3.2103.5
+	github.com/ethereum/go-ethereum v1.11.6
+	golang.org/x/net v0.9.0
+)
 
 require (
 	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
-	github.com/dgraph-io/badger/v3 v3.2103.5 // indirect
 	github.com/dgraph-io/ristretto v0.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.0 // indirect
-	github.com/ethereum/go-ethereum v1.11.6 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b // indirect
 	github.com/golang/groupcache v0.0.0-20190702054246-869f871628b6 // indirect
