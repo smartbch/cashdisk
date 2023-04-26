@@ -10,7 +10,6 @@ import (
 )
 
 type UserManager struct {
-	BillingMeter
 	cfg *config.Config
 
 	listenUrl string
@@ -20,9 +19,8 @@ type UserManager struct {
 
 func NewUserManager(url string) *UserManager {
 	m := &UserManager{
-		BillingMeter: BillingMeter{},
-		cfg:          &config.Config{},
-		listenUrl:    url,
+		cfg:       &config.Config{},
+		listenUrl: url,
 	}
 	return m
 }
