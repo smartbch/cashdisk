@@ -12,6 +12,7 @@ import (
 	"golang.org/x/net/webdav"
 
 	"github.com/smartbch/cashdisk/config"
+	"github.com/smartbch/cashdisk/types"
 )
 
 type DiskService struct {
@@ -40,7 +41,7 @@ func (d *DiskService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// read uid
-	uid := getUID(d.db, addr)
+	uid := types.GetUID(d.db, addr)
 	if uid < 0 {
 		http.Error(w, "Inconsistent Database", http.StatusInternalServerError)
 		return
@@ -69,7 +70,7 @@ func (d *DiskService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// friend-shared directory
 	friendName := parts[0]
 	friendAddr := common.HexToAddress(friendName)
-	friendUid := getUID(d.db, friendAddr)
+	friendUid := types.GetUID(d.db, friendAddr)
 	if friendUid < 0 {
 		http.Error(w, "Inconsistent Database", http.StatusInternalServerError)
 		return

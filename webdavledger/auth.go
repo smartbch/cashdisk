@@ -48,24 +48,6 @@ func authFunc(db *badger.DB, w http.ResponseWriter, r *http.Request) (addr commo
 	return addr, ""
 }
 
-func getUID(db *badger.DB, addr common.Address) (uid int64) {
-	key := append([]byte{types.UserToId}, addr[:]...)
-	err := db.View(func(txn *badger.Txn) (err error) {
-		item, err := txn.Get(key)
-		if err != nil {
-			return err
-		}
-		return item.Value(func(val []byte) error {
-			uid = utils.BytesToInt64(val)
-			return nil
-		})
-	})
-	if err != nil {
-		return -1
-	}
-	return
-}
-
 func getExpireTime(db *badger.DB, fromUid, toUid int64, dir string) (expireTime int64) {
 	key := make([]byte, 1+8+8+32)
 	key[0] = types.SharedDir

@@ -31,7 +31,7 @@ func (wd *WatchedDir) Mkdir(ctx context.Context, name string, perm os.FileMode) 
 		return errors.New("in the root directory, EVM address cannot be used as directory name")
 	}
 	operation := fmt.Sprintf("Mkdir '%s'", name)
-	err := consumePoints(wd.db, wd.uid, types.PointsOfMkdir, operation)
+	err := types.ConsumePoints(wd.db, wd.uid, types.PointsOfMkdir, operation)
 	if err != nil {
 		return err
 	}
@@ -49,7 +49,7 @@ func (wd *WatchedDir) Rename(ctx context.Context, oldName, newName string) error
 		return types.ErrReadOnly
 	}
 	operation := fmt.Sprintf("Rename '%s' to '%s'", oldName, newName)
-	err := consumePoints(wd.db, wd.uid, types.PointsOfRename, operation)
+	err := types.ConsumePoints(wd.db, wd.uid, types.PointsOfRename, operation)
 	if err != nil {
 		return err
 	}
@@ -58,7 +58,7 @@ func (wd *WatchedDir) Rename(ctx context.Context, oldName, newName string) error
 
 func (wd *WatchedDir) Stat(ctx context.Context, name string) (fi os.FileInfo, err error) {
 	operation := fmt.Sprintf("Stat '%s'", name)
-	err = consumePoints(wd.db, wd.uid, types.PointsPerFileInfo, operation)
+	err = types.ConsumePoints(wd.db, wd.uid, types.PointsPerFileInfo, operation)
 	if err != nil {
 		return
 	}
@@ -80,7 +80,7 @@ func (wf *WatchedFile) Write(p []byte) (n int, err error) {
 		return 0, types.ErrReadOnly
 	}
 	operation := fmt.Sprintf("Write to '%s' for %d bytes", wf.name, len(p))
-	err = consumePoints(wf.db, wf.uid, int64((len(p)+1023)/1024), operation)
+	err = types.ConsumePoints(wf.db, wf.uid, int64((len(p)+1023)/1024), operation)
 	if err != nil {
 		return 0, err
 	}
@@ -91,7 +91,7 @@ func (wf *WatchedFile) Readdir(count int) ([]fs.FileInfo, error) {
 	res, err := wf.File.Readdir(count)
 	if err == nil {
 		operation := fmt.Sprintf("Read dir '%s' for %d entries", wf.name, len(res))
-		err = consumePoints(wf.db, wf.uid, int64(len(res))*types.PointsPerFileInfo, operation)
+		err = types.ConsumePoints(wf.db, wf.uid, int64(len(res))*types.PointsPerFileInfo, operation)
 	}
 	return res, err
 }
@@ -100,7 +100,7 @@ func (wf *WatchedFile) Stat() (fs.FileInfo, error) {
 	res, err := wf.File.Stat()
 	if err == nil {
 		operation := fmt.Sprintf("Stat '%s'", wf.name)
-		err = consumePoints(wf.db, wf.uid, types.PointsPerFileInfo, operation)
+		err = types.ConsumePoints(wf.db, wf.uid, types.PointsPerFileInfo, operation)
 	}
 	return res, err
 }
@@ -109,7 +109,7 @@ func (wf *WatchedFile) Read(p []byte) (n int, err error) {
 	n, err = wf.File.Read(p)
 	if err == nil {
 		operation := fmt.Sprintf("Read '%s' for %d bytes", wf.name, n)
-		err = consumePoints(wf.db, wf.uid, int64((n+1023)/1024), operation)
+		err = types.ConsumePoints(wf.db, wf.uid, int64((n+1023)/1024), operation)
 	}
 	return n, err
 }
