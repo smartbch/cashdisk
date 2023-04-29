@@ -26,6 +26,7 @@ const (
 	PointsOfMkdir             = int64(200)
 	PointsOfRename            = int64(150)
 	PointsOfUserManagerAccess = int64(10)
+	PointsForStorage          = int64(1000)
 
 	ConsumeLogDuration = 30 * 24 * time.Hour
 )

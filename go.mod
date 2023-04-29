@@ -3,6 +3,7 @@ module github.com/smartbch/cashdisk
 go 1.20
 
 require (
+	github.com/OneOfOne/xxhash v1.2.2
 	github.com/dgraph-io/badger/v3 v3.2103.5
 	github.com/ethereum/go-ethereum v1.11.6
 	github.com/gcash/bchd v0.17.2-0.20201218180520-5708823e0e99
