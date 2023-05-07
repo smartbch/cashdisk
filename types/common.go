@@ -10,6 +10,10 @@ type BuyPointsParam struct {
 	IsMainnetTx  bool     `json:"isMainnetTx"`
 	Tx           []byte   `json:"tx"`
 	PasswordHash [32]byte `json:"passwordHash"`
+	Salt         [4]byte  `json:"salt"`
+	SenderPkh    [20]byte `json:"senderPkh"`
+	Expiration   int64    `json:"expiration"`
+	Probability  int64    `json:"probability"`
 	Sig          []byte   `json:"signature"`
 }
 

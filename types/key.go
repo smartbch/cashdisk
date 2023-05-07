@@ -16,7 +16,7 @@ import (
 const (
 	RemainedPoints = byte(100) // key: RemainedPoints + uid, value: 8-byte int64
 	DeductPoints   = byte(102) // key: DeductPoints + uid + timestamp, value: 8-byte int64 + operation
-	AddPoints      = byte(104) // key: AddPoints + uid + timestamp, value: 8-byte int64 + txid
+	AddPoints      = byte(104) // key: AddPoints + uid + 0x01(finalized tx) or 0x02(pending tx) or 0x04(dead tx) + timestamp, value: 8-byte int64 + txid
 	PasswordHash   = byte(106) // key: PasswordHash + 20-byte address, value: 32-byte passwd hash
 	SharedDir      = byte(108) // key: SharedDir + from-uid + to-uid + sha256(dir), value: 8-byte expiretime + dir
 	UserToId       = byte(110) // key: UserToId + 20-byte address, value: 8-byte uid
@@ -29,6 +29,10 @@ const (
 	PointsForStorage          = int64(1000)
 
 	ConsumeLogDuration = 30 * 24 * time.Hour
+
+	TxFinalized byte = 0x01
+	TxPending   byte = 0x02
+	TxDead      byte = 0x04
 )
 
 func AddressToUID(db *badger.DB, addr common.Address) int64 {
@@ -169,4 +173,23 @@ func ConsumePoints(db *badger.DB, uid, points int64, operation string) error {
 		e := badger.NewEntry(key, value).WithTTL(ConsumeLogDuration)
 		return txn.SetEntry(e)
 	})
+}
+
+type PendingPaymentInfo struct {
+	Uid       int64
+	Txid      string
+	Timestamp int64
+}
+
+func GetAllPendingTxInfo(db *badger.DB) []*PendingPaymentInfo {
+	var res []*PendingPaymentInfo
+	getter := func(txn *badger.Txn) error {
+		//todo
+		return nil
+	}
+	err := db.View(getter)
+	if err != nil {
+		panic(err)
+	}
+	return res
 }

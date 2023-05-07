@@ -4,19 +4,28 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 
 	"github.com/dgraph-io/badger/v3"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/gcash/bchd/chaincfg"
+	"github.com/gcash/bchd/rpcclient"
+	"github.com/gcash/bchd/txscript"
 	"github.com/gcash/bchd/wire"
 	"github.com/gcash/bchutil"
+	"github.com/smartbch/stochastic-pay/sdk"
 	"github.com/tyler-smith/go-bip32"
 
 	"github.com/smartbch/cashdisk/config"
 	"github.com/smartbch/cashdisk/types"
 	"github.com/smartbch/cashdisk/utils"
+)
+
+var (
+	minExpirationBlocksInMainnet int64 = 10
 )
 
 type UserManager struct {
@@ -26,6 +35,12 @@ type UserManager struct {
 
 	key *bip32.Key
 	DB  *badger.DB
+
+	bchClient   *rpcclient.Client
+	receiverPkh [20]byte
+	pkScript    []byte
+
+	pendingPaymentCache []*types.PendingPaymentInfo
 }
 
 func NewUserManager(url string) *UserManager {
@@ -38,6 +53,7 @@ func NewUserManager(url string) *UserManager {
 
 func (u *UserManager) Run() {
 	fmt.Printf("start user manager service on %s\n", u.listenUrl)
+	go u.StartPaymentWatcher()
 	mux := http.NewServeMux()
 	u.registerHttpEndpoint(mux)
 	err := http.ListenAndServe(u.listenUrl, mux)
@@ -112,7 +128,7 @@ func (u *UserManager) handleBuyPointsAndAddUser(param *types.BuyPointsParam) err
 		if err != nil {
 			return err
 		}
-		err = u.handleMainnetUserPayment(user, uid, &tx, isNewUser)
+		err = u.handleMainnetUserPayment(user, uid, &tx, isNewUser, param)
 		if err != nil {
 			return err
 		}
@@ -128,11 +144,61 @@ func (u *UserManager) handleBuyPointsAndAddUser(param *types.BuyPointsParam) err
 	return types.ConsumePoints(u.DB, uid, types.PointsOfUserManagerAccess, "buyPoints")
 }
 
-func (u *UserManager) handleMainnetUserPayment(user common.Address, uid int64, tx *wire.MsgTx, isNewUser bool) error {
+func (u *UserManager) handleMainnetUserPayment(user common.Address, uid int64, tx *wire.MsgTx, isNewUser bool, param *types.BuyPointsParam) error {
 	// todo: get the payment in the tx and store related points
-	points := int64(1)
+	amount := int64(0)
+	if param.Expiration == 0 {
+		// this is a normal bch mainnet transfer tx
+		for _, out := range tx.TxOut {
+			if bytes.Equal(out.PkScript, u.pkScript) {
+				amount = out.Value
+				break
+			}
+		}
+	} else {
+		// this is a stochastic tx
+		latestBlock, _ := u.bchClient.GetBlockCount()
+		if param.Expiration < latestBlock+minExpirationBlocksInMainnet {
+			return errors.New("expiration is too small")
+		}
+		// build the p2sh address from param
+		keyBz, err := u.key.Serialize()
+		if err != nil {
+			panic(err)
+		}
+		secret := sha256.Sum256(append(keyBz, utils.Int64ToBytes(param.Timestamp)...))
+		var secretHash [20]byte
+		copy(secretHash[:], bchutil.Hash160(secret[:]))
+		covenant, _ := sdk.NewMainnetCovenant(param.SenderPkh, u.receiverPkh, secretHash, param.Salt, param.Expiration, param.Probability)
+		scriptHash, err := covenant.GetRedeemScriptHash()
+		if err != nil {
+			return err
+		}
+		address, err := bchutil.NewAddressScriptHashFromHash(scriptHash, &chaincfg.MainNetParams)
+		if err != nil {
+			return err
+		}
+		pkScript, err := txscript.PayToAddrScript(address)
+		if err != nil {
+			return err
+		}
+		for _, out := range tx.TxOut {
+			if bytes.Equal(out.PkScript, pkScript) {
+				amount = out.Value
+				break
+			}
+		}
+	}
+	if amount == 0 {
+		return errors.New("not pay any bch to me")
+	}
+	// todo: bch to point, what ratio?
+	//points := int64(1)
+	// todo: send the tx, not wait the tx be minted here, insert the txid in db, using another goroutine to follow the tx info.
 	// todo: new user has min amount limit check
-	return types.UpdatePoints(u.DB, uid, points)
+	// move this to payment check goroutine
+	//return types.UpdatePoints(u.DB, uid, points)
+	return nil
 }
 
 func (u *UserManager) handleViewHistory(w http.ResponseWriter, r *http.Request) {
@@ -179,7 +245,7 @@ func (u *UserManager) handleViewHistory(w http.ResponseWriter, r *http.Request) 
 		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
 			item := it.Item()
 			k := item.Key()
-			timestamp := utils.BytesToInt64(k[len(prefix):])
+			timestamp := utils.BytesToInt64(k[len(prefix)+1:])
 			if timestamp > endTime || timestamp < startTime {
 				continue
 			}
@@ -187,7 +253,7 @@ func (u *UserManager) handleViewHistory(w http.ResponseWriter, r *http.Request) 
 				record := types.OperationRecord{
 					Timestamp: timestamp,
 					Amount:    utils.BytesToInt64(v[:8]),
-					Operation: string(v[8:]),
+					Operation: string(v[8:]), //todo: add tx finalized or pending or dead in Operation
 				}
 				res.Records = append(res.Records, record)
 				return nil
