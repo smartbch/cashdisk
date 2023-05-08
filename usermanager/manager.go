@@ -3,11 +3,13 @@ package usermanager
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 
 	"github.com/dgraph-io/badger/v3"
 	"github.com/ethereum/go-ethereum/common"
@@ -26,6 +28,8 @@ import (
 
 var (
 	minExpirationBlocksInMainnet int64 = 10
+	pointsPerBCHSatochi          int64 = 100_000_000
+	minPointsWhenFirstBuy        int64 = 10_000_000
 )
 
 type UserManager struct {
@@ -40,14 +44,53 @@ type UserManager struct {
 	receiverPkh [20]byte
 	pkScript    []byte
 
+	lock                sync.RWMutex
 	pendingPaymentCache []*types.PendingPaymentInfo
 }
 
-func NewUserManager(url string) *UserManager {
+func NewUserManager(listenUrl string, bchRpcUrl string, dbPath string, receiverPubkeyHash string) *UserManager {
 	m := &UserManager{
 		cfg:       &config.Config{},
-		listenUrl: url,
+		listenUrl: listenUrl,
 	}
+	client, err := utils.NewBchMainnetClient(bchRpcUrl)
+	if err != nil {
+		panic(err)
+	}
+	m.bchClient = client
+	db, err := badger.Open(badger.DefaultOptions(dbPath))
+	if err != nil {
+		panic(err)
+	}
+	m.DB = db
+	seed, err := bip32.NewSeed()
+	if err != nil {
+		panic(err)
+	}
+	key, err := bip32.NewMasterKey(seed)
+	if err != nil {
+		panic(err)
+	}
+	m.key = key
+	hash, err := hex.DecodeString(receiverPubkeyHash)
+	if err != nil {
+		panic(err)
+	}
+	if len(hash) != 20 {
+		panic("receiverPubkeyHash is not 20 bytes long")
+	}
+	copy(m.receiverPkh[:], hash)
+	pkScript, err := txscript.NewScriptBuilder().
+		AddOp(txscript.OP_DUP).
+		AddOp(txscript.OP_HASH160).
+		AddData(m.receiverPkh[:]).
+		AddOp(txscript.OP_EQUALVERIFY).
+		AddOp(txscript.OP_CHECKSIG).
+		Script()
+	if err != nil {
+		panic(err)
+	}
+	m.pkScript = pkScript
 	return m
 }
 
@@ -133,7 +176,7 @@ func (u *UserManager) handleBuyPointsAndAddUser(param *types.BuyPointsParam) err
 			return err
 		}
 	} else {
-		//todo: support smartbch payment
+		panic("not support side chain payment temp")
 	}
 	if isNewUser {
 		err := types.AddNewUser(u.DB, user, uid, param.PasswordHash)
@@ -192,12 +235,28 @@ func (u *UserManager) handleMainnetUserPayment(user common.Address, uid int64, t
 	if amount == 0 {
 		return errors.New("not pay any bch to me")
 	}
-	// todo: bch to point, what ratio?
-	//points := int64(1)
-	// todo: send the tx, not wait the tx be minted here, insert the txid in db, using another goroutine to follow the tx info.
-	// todo: new user has min amount limit check
-	// move this to payment check goroutine
-	//return types.UpdatePoints(u.DB, uid, points)
+	points := amount * pointsPerBCHSatochi
+	if isNewUser && points < minPointsWhenFirstBuy {
+		return errors.New(fmt.Sprintf("must buy at least %d points when first buy", minPointsWhenFirstBuy))
+	}
+	// todo: make sure below code return err if tx is repeat
+	txHash, err := u.bchClient.SendRawTransaction(tx, false)
+	if err != nil {
+		return err
+	}
+	t := utils.GetTimestamp()
+	err = types.AddAddPoints(u.DB, uid, t, points, *txHash)
+	if err != nil {
+		return err
+	}
+	u.lock.Lock()
+	u.pendingPaymentCache = append(u.pendingPaymentCache, &types.PendingPaymentInfo{
+		Uid:       uid,
+		Txid:      *txHash,
+		Timestamp: t,
+		Value:     points,
+	})
+	u.lock.Unlock()
 	return nil
 }
 

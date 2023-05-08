@@ -16,7 +16,7 @@ import (
 const (
 	RemainedPoints = byte(100) // key: RemainedPoints + uid, value: 8-byte int64
 	DeductPoints   = byte(102) // key: DeductPoints + uid + timestamp, value: 8-byte int64 + operation
-	AddPoints      = byte(104) // key: AddPoints + uid + 0x01(finalized tx) or 0x02(pending tx) or 0x04(dead tx) + timestamp, value: 8-byte int64 + txid
+	AddPoints      = byte(104) // key: AddPoints + uid + 0x01(finalized tx) or 0x02(pending tx) or 0x04(dead tx) + timestamp, value: 8-byte int64 + 32-byte txid
 	PasswordHash   = byte(106) // key: PasswordHash + 20-byte address, value: 32-byte passwd hash
 	SharedDir      = byte(108) // key: SharedDir + from-uid + to-uid + sha256(dir), value: 8-byte expiretime + dir
 	UserToId       = byte(110) // key: UserToId + 20-byte address, value: 8-byte uid
@@ -177,19 +177,73 @@ func ConsumePoints(db *badger.DB, uid, points int64, operation string) error {
 
 type PendingPaymentInfo struct {
 	Uid       int64
-	Txid      string
+	Txid      [32]byte
 	Timestamp int64
+	Value     int64
 }
 
 func GetAllPendingTxInfo(db *badger.DB) []*PendingPaymentInfo {
-	var res []*PendingPaymentInfo
+	var infos []*PendingPaymentInfo
 	getter := func(txn *badger.Txn) error {
-		//todo
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+		it := txn.NewIterator(opts)
+		defer it.Close()
+		prefix := append([]byte{AddPoints})
+		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			item := it.Item()
+			k := item.Key()
+			isPending := k[1+8] == TxPending
+			if !isPending {
+				continue
+			}
+			err := item.Value(func(v []byte) error {
+				info := PendingPaymentInfo{
+					Uid:       utils.BytesToInt64(k[1:9]),
+					Timestamp: utils.BytesToInt64(k[1+8+1:]),
+					Value:     utils.BytesToInt64(v[:8]),
+				}
+				copy(info.Txid[:], v[8:])
+				infos = append(infos, &info)
+				return nil
+			})
+			if err != nil {
+				continue
+			}
+		}
 		return nil
 	}
 	err := db.View(getter)
 	if err != nil {
 		panic(err)
 	}
-	return res
+	return infos
+}
+
+func AddAddPoints(db *badger.DB, uid, timestamp, value int64, txid [32]byte) error {
+	add := func(txn *badger.Txn) error {
+		key := append([]byte{AddPoints}, utils.Int64ToBytes(uid)...)
+		t := utils.Int64ToBytes(timestamp)
+		key = append(key, TxPending)
+		key = append(key, t...)
+		return txn.Set(key, append(utils.Int64ToBytes(value), txid[:]...))
+	}
+	return db.Update(add)
+}
+
+func UpdateAddPointRecord(db *badger.DB, uid, timestamp int64, txStatus byte, txid [32]byte, value int64) error {
+	update := func(txn *badger.Txn) error {
+		key := append([]byte{AddPoints}, utils.Int64ToBytes(uid)...)
+		t := utils.Int64ToBytes(timestamp)
+		oldKey := append(key, TxPending)
+		oldKey = append(oldKey, t...)
+		key = append(key, txStatus)
+		key = append(key, t...)
+		err := txn.Delete(oldKey)
+		if err != nil {
+			return err
+		}
+		return txn.Set(key, append(utils.Int64ToBytes(value), txid[:]...))
+	}
+	return db.Update(update)
 }
