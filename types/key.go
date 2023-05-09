@@ -123,7 +123,26 @@ func UpdatePoints(db *badger.DB, uid int64, changeAmount int64) error {
 	return db.Update(update)
 }
 
-func getPointsUpdateHistory(uid, startTime, endTime int64) {
+func IsUserLock(db *badger.DB, uid int64) (bool, int64, error) {
+	var balance int64
+	getter := func(txn *badger.Txn) error {
+		key := append([]byte{RemainedPoints}, utils.Int64ToBytes(uid)...)
+		item, err := txn.Get(key)
+		if err != nil {
+			return err
+		}
+		bal, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
+		balance = utils.BytesToInt64(bal)
+		return nil
+	}
+	err := db.View(getter)
+	if err != nil {
+		return false, 0, err
+	}
+	return balance <= -1_000_000, balance, nil
 }
 
 func UpdateUserPasswordHash(db *badger.DB, addr common.Address, passwordHash [32]byte) error {

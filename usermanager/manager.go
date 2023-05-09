@@ -10,7 +10,9 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"time"
 
+	"github.com/ReneKroon/ttlcache"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/gcash/bchd/chaincfg"
@@ -46,6 +48,8 @@ type UserManager struct {
 
 	lock                sync.RWMutex
 	pendingPaymentCache []*types.PendingPaymentInfo
+
+	unSpentStochasticTxCache *ttlcache.Cache
 }
 
 func NewUserManager(listenUrl string, bchRpcUrl string, dbPath string, receiverPubkeyHash string) *UserManager {
@@ -91,6 +95,9 @@ func NewUserManager(listenUrl string, bchRpcUrl string, dbPath string, receiverP
 		panic(err)
 	}
 	m.pkScript = pkScript
+	cache := ttlcache.NewCache()
+	cache.SetTTL(5 * time.Minute)
+	m.unSpentStochasticTxCache = cache
 	return m
 }
 
@@ -160,6 +167,11 @@ func (u *UserManager) handleBuyPointsAndAddUser(param *types.BuyPointsParam) err
 	if err != nil {
 		return err
 	}
+	var zeroAddress = [20]byte{}
+	if param.FriendAddress != zeroAddress {
+		// pay for friend
+		user = param.FriendAddress
+	}
 	uid := types.GetUID(u.DB, user)
 	var isNewUser bool
 	if uid < 0 {
@@ -189,18 +201,39 @@ func (u *UserManager) handleBuyPointsAndAddUser(param *types.BuyPointsParam) err
 }
 
 func (u *UserManager) handleMainnetUserPayment(user common.Address, uid int64, tx *wire.MsgTx, isNewUser bool, param *types.BuyPointsParam) error {
-	// todo: get the payment in the tx and store related points
 	amount := int64(0)
+	isLocked := false
+	balance := int64(0)
+	if !isNewUser {
+		var err error
+		isLocked, balance, err = types.IsUserLock(u.DB, uid)
+		if err != nil {
+			panic(err)
+		}
+	}
 	if param.Expiration == 0 {
 		// this is a normal bch mainnet transfer tx
 		for _, out := range tx.TxOut {
 			if bytes.Equal(out.PkScript, u.pkScript) {
-				amount = out.Value
+				amount += out.Value
 				break
+			}
+		}
+		if isLocked {
+			if amount+balance <= 0 {
+				return errors.New("amount is not enough to positive the balance")
 			}
 		}
 	} else {
 		// this is a stochastic tx
+		if param.Timestamp < time.Now().UnixNano()-5*int64(time.Minute) {
+			return errors.New("timestamp is too old for stochastic pay")
+		}
+		txid := tx.TxHash()
+		_, exist := u.unSpentStochasticTxCache.Get(txid.String())
+		if exist {
+			return errors.New("tx already used prev time")
+		}
 		latestBlock, _ := u.bchClient.GetBlockCount()
 		if param.Expiration < latestBlock+minExpirationBlocksInMainnet {
 			return errors.New("expiration is too small")
@@ -232,6 +265,13 @@ func (u *UserManager) handleMainnetUserPayment(user common.Address, uid int64, t
 				break
 			}
 		}
+		if isLocked {
+			probabilityInRatio := (balance / -1000_000) / 10
+			probability := sdk.GetProbabilityByRatio(float64(probabilityInRatio))
+			if probability != param.Probability || amount != 10_000_000 {
+				return errors.New("probability or amount is not match when user is locked")
+			}
+		}
 	}
 	if amount == 0 {
 		return errors.New("not pay any bch to me")
@@ -250,6 +290,7 @@ func (u *UserManager) handleMainnetUserPayment(user common.Address, uid int64, t
 	if err != nil {
 		return err
 	}
+	u.unSpentStochasticTxCache.Set(txHash.String(), true)
 	u.lock.Lock()
 	u.pendingPaymentCache = append(u.pendingPaymentCache, &types.PendingPaymentInfo{
 		Uid:       uid,
@@ -284,6 +325,17 @@ func (u *UserManager) handleViewHistory(w http.ResponseWriter, r *http.Request) 
 	if uid < 0 {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("user not register"))
+		return
+	}
+	isLocked, _, err := types.IsUserLock(u.DB, uid)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("get user lock status error" + err.Error()))
+		return
+	}
+	if isLocked {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("user is locked"))
 		return
 	}
 	err = types.ConsumePoints(u.DB, uid, types.PointsOfUserManagerAccess, "viewHistory")
@@ -359,6 +411,17 @@ func (u *UserManager) handleSetPassword(w http.ResponseWriter, r *http.Request) 
 		w.Write([]byte("user not register"))
 		return
 	}
+	isLocked, _, err := types.IsUserLock(u.DB, uid)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("get user lock status error" + err.Error()))
+		return
+	}
+	if isLocked {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("user is locked"))
+		return
+	}
 	err = types.ConsumePoints(u.DB, uid, types.PointsOfUserManagerAccess, "setPassword")
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -398,6 +461,17 @@ func (u *UserManager) handleShareDir(w http.ResponseWriter, r *http.Request) {
 	if uid < 0 {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("user not register"))
+		return
+	}
+	isLocked, _, err := types.IsUserLock(u.DB, uid)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("get user lock status error" + err.Error()))
+		return
+	}
+	if isLocked {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("user is locked"))
 		return
 	}
 	err = types.ConsumePoints(u.DB, uid, types.PointsOfUserManagerAccess, "shareDir")

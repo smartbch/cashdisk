@@ -39,14 +39,21 @@ func (d *DiskService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, errStr, http.StatusUnauthorized)
 		return
 	}
-
 	// read uid
 	uid := types.GetUID(d.db, addr)
 	if uid < 0 {
 		http.Error(w, "Inconsistent Database", http.StatusInternalServerError)
 		return
 	}
-
+	isLocked, _, err := types.IsUserLock(d.db, uid)
+	if err != nil {
+		http.Error(w, "get user lock status error"+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if isLocked {
+		http.Error(w, "user is locked", http.StatusBadRequest)
+		return
+	}
 	// create webdav handler
 	handler := &webdav.Handler{LockSystem: &DummyLockSystem{}}
 	username, _, _ := r.BasicAuth()

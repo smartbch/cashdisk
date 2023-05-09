@@ -3,8 +3,8 @@ package utils
 import (
 	"crypto/sha256"
 	"encoding/binary"
-	"sync/atomic"
 	"sync"
+	"sync/atomic"
 )
 
 type BloomLimiter struct {
@@ -58,4 +58,3 @@ func (b *BloomLimiter) IncrCount(timeSlot int, requestor []byte) (total uint32) 
 	}
 	return
 }
-

@@ -6,15 +6,16 @@ type GetSecretHashRes struct {
 }
 
 type BuyPointsParam struct {
-	Timestamp    int64    `json:"timestamp"`
-	IsMainnetTx  bool     `json:"isMainnetTx"`
-	Tx           []byte   `json:"tx"`
-	PasswordHash [32]byte `json:"passwordHash"`
-	Salt         [4]byte  `json:"salt"`
-	SenderPkh    [20]byte `json:"senderPkh"`
-	Expiration   int64    `json:"expiration"`
-	Probability  int64    `json:"probability"`
-	Sig          []byte   `json:"signature"`
+	Timestamp     int64    `json:"timestamp"`
+	IsMainnetTx   bool     `json:"isMainnetTx"`
+	Tx            []byte   `json:"tx"`
+	PasswordHash  [32]byte `json:"passwordHash"`
+	Salt          [4]byte  `json:"salt"`
+	SenderPkh     [20]byte `json:"senderPkh"`
+	Expiration    int64    `json:"expiration"`
+	Probability   int64    `json:"probability"`
+	FriendAddress [20]byte `json:"friendAddress"`
+	Sig           []byte   `json:"signature"`
 }
 
 type ViewHistoryParam struct {
