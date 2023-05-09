@@ -1,4 +1,4 @@
-package webdavledger
+package usermanager
 
 import (
 	"crypto/sha256"
@@ -6,19 +6,51 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/dgraph-io/badger/v3"
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/smartbch/cashdisk/utils"
 	"github.com/smartbch/cashdisk/types"
+	"github.com/smartbch/cashdisk/utils"
 )
 
 const (
-	Mega = 1024*1024
+	Mega = 1024 * 1024
 )
 
-func dirScan(db *badger.DB, workDir string, hash common.Hash, thres int64, logger *log.Logger,
+var (
+	dirFeeThreshold int64 = 1000 * 1000
+)
+
+func (u *UserManager) StartDirScanRoutine() {
+	prevBlk, _ := u.bchClient.GetBlockCount()
+	for {
+		time.Sleep(30 * time.Second)
+		latestBlk, _ := u.bchClient.GetBlockCount()
+		if latestBlk > prevBlk {
+			blkHash, _ := u.bchClient.GetBlockHash(latestBlk)
+			DirScan(u.DB, ".", *blkHash, dirFeeThreshold, nil)
+			infos, err := types.GetDirShareInfos(u.DB)
+			if err != nil {
+				panic(err)
+			}
+			for uid, amount := range infos {
+				hash := sha256.Sum256(append(blkHash[:], utils.Int64ToBytes(uid)...))
+				n := utils.BytesToInt64(hash[:8])
+				if n < dirFeeThreshold*amount {
+					operation := fmt.Sprintf("Storage: block=%s dir share=%d", hash, amount)
+					err = types.ConsumePoints(u.DB, uid, types.PointsForStorage, operation)
+					if err != nil {
+						panic(err)
+					}
+				}
+			}
+		}
+	}
+}
+
+func dirScan(db *badger.DB, workDir string, hash [32]byte, thres int64, logger *log.Logger,
 	uid int64, addr common.Address) {
 	dir := filepath.Join(workDir, addr.Hex())
 	err := filepath.Walk(dir, func(path string, f os.FileInfo, err error) error {
@@ -27,11 +59,11 @@ func dirScan(db *badger.DB, workDir string, hash common.Hash, thres int64, logge
 		}
 		size := int64(1)
 		if !f.IsDir() {
-			size = (f.Size() + Mega - 1)/Mega
+			size = (f.Size() + Mega - 1) / Mega
 		}
 		hash := sha256.Sum256(append(hash[:], path...))
 		n := utils.BytesToInt64(hash[:8])
-		if n < thres * size {
+		if n < thres*size {
 			operation := fmt.Sprintf("Storage: block=%s path=%s size=%d", hash, path, size)
 			return types.ConsumePoints(db, uid, types.PointsForStorage, operation)
 		}
@@ -42,7 +74,7 @@ func dirScan(db *badger.DB, workDir string, hash common.Hash, thres int64, logge
 	}
 }
 
-func DirScan(db *badger.DB, workDir string, hash common.Hash, thres int64, logger *log.Logger) {
+func DirScan(db *badger.DB, workDir string, hash [32]byte, thres int64, logger *log.Logger) {
 	err := db.View(func(txn *badger.Txn) error {
 		it := txn.NewIterator(badger.DefaultIteratorOptions)
 		defer it.Close()

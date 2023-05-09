@@ -247,3 +247,23 @@ func UpdateAddPointRecord(db *badger.DB, uid, timestamp int64, txStatus byte, tx
 	}
 	return db.Update(update)
 }
+
+func GetDirShareInfos(db *badger.DB) (map[int64]int64, error) {
+	var infos = map[int64]int64{}
+	getter := func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+		it := txn.NewIterator(opts)
+		defer it.Close()
+		prefix := append([]byte{SharedDir})
+		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			item := it.Item()
+			k := item.Key()
+			uid := utils.BytesToInt64(k[1:9])
+			infos[uid] = infos[uid] + 1
+		}
+		return nil
+	}
+	err := db.View(getter)
+	return infos, err
+}

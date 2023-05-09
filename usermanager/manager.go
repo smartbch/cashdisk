@@ -97,6 +97,7 @@ func NewUserManager(listenUrl string, bchRpcUrl string, dbPath string, receiverP
 func (u *UserManager) Run() {
 	fmt.Printf("start user manager service on %s\n", u.listenUrl)
 	go u.StartPaymentWatcher()
+	go u.StartDirScanRoutine()
 	mux := http.NewServeMux()
 	u.registerHttpEndpoint(mux)
 	err := http.ListenAndServe(u.listenUrl, mux)
