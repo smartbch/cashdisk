@@ -40,8 +40,9 @@ type SetPasswordHashParam struct {
 }
 
 type ShareDirParam struct {
-	Friend      [20]byte `json:"friend"`
-	Dir         string   `json:"dir"`
-	ExpiredTime int64    `json:"expiredTime"`
-	Sig         []byte   `json:"signature"`
+	Friend       [20]byte `json:"friend"`
+	PasswordHash [32]byte `json:"passwordHash"`
+	Dir          string   `json:"dir"`
+	ExpiredTime  int64    `json:"expiredTime"`
+	Sig          []byte   `json:"signature"`
 }

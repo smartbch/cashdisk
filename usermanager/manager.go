@@ -482,9 +482,13 @@ func (u *UserManager) handleShareDir(w http.ResponseWriter, r *http.Request) {
 	}
 	fUid := types.GetUID(u.DB, param.Friend)
 	if fUid < 0 {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("friend not register"))
-		return
+		fUid = types.AddressToUID(u.DB, param.Friend)
+		err = types.AddNewUser(u.DB, param.Friend, fUid, param.PasswordHash)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("add new user failed: " + err.Error()))
+			return
+		}
 	}
 	err = types.UpdateSharedDir(u.DB, uid, fUid, param.Dir, param.ExpiredTime)
 	if err != nil {
